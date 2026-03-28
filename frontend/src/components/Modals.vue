@@ -8,21 +8,37 @@
       </div>
     </div>
 
-    <div v-if="showPictureModal" class="modal-overlay" @click.self="$emit('close')">
-      <div class="modal-card">
-        <h2>Modify Profile Picture</h2>
-        <p class="modal-text">Paste a new image URL below.</p>
-        <input
-          :value="newImageUrl"
-          @input="$emit('update:newImageUrl', $event.target.value)"
-          type="text"
-          class="url-input"
-          placeholder="https://example.com/avatar.png"
-        />
-        <div class="modal-actions">
-          <button class="close-btn" @click="$emit('close')">Cancel</button>
-          <button class="save-btn" @click="$emit('save-picture')">Save</button>
+    <div v-if="showOrdersModal" class="modal-overlay" @click.self="$emit('close')">
+      <div class="modal-card orders-card">
+        <h2>Order History</h2>
+
+        <div v-if="orders.length === 0" class="empty-state">
+          No orders yet.
         </div>
+
+        <div v-else class="orders-list">
+          <div v-for="order in orders" :key="order.id" class="order-item">
+            <div class="order-top">
+              <div>
+                <div class="order-id">Order #{{ order.id }}</div>
+                <div class="order-date">{{ order.date }}</div>
+              </div>
+              <div class="order-total">{{ order.total }} MARVINS</div>
+            </div>
+
+            <div class="order-products">
+              <span
+                v-for="item in order.items"
+                :key="item"
+                class="order-product-tag"
+              >
+                {{ item }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <button class="close-btn" @click="$emit('close')">Close</button>
       </div>
     </div>
   </div>
@@ -30,7 +46,7 @@
 
 <script>
 export default {
-  props: ['showBalanceModal', 'showPictureModal', 'balance', 'newImageUrl']
+  props: ['showBalanceModal', 'showOrdersModal', 'balance', 'orders']
 }
 </script>
 
@@ -59,56 +75,87 @@ export default {
   color: white;
 }
 
+.orders-card {
+  max-width: 650px;
+  text-align: left;
+}
+
 .balance-number {
   font-size: 32px;
   font-weight: 800;
   color: #67e8f9;
 }
 
-.modal-text {
+.empty-state {
+  margin: 20px 0;
   color: #cbd5e1;
 }
 
-.url-input {
-  width: 100%;
-  margin-top: 16px;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.12);
+.orders-list {
+  margin: 20px 0;
+  display: grid;
+  gap: 14px;
+}
+
+.order-item {
+  padding: 16px;
+  border-radius: 18px;
   background: rgba(255,255,255,0.05);
-  color: white;
-  outline: none;
-  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
-.modal-actions {
+.order-top {
   display: flex;
+  justify-content: space-between;
   gap: 12px;
-  margin-top: 18px;
+  align-items: flex-start;
 }
 
-.close-btn,
-.save-btn {
-  flex: 1;
+.order-id {
+  font-weight: 700;
+  color: white;
+}
+
+.order-date {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.order-total {
+  font-weight: 800;
+  color: #67e8f9;
+}
+
+.order-products {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.order-product-tag {
+  padding: 8px 10px;
+  border-radius: 9999px;
+  background: rgba(255,255,255,0.08);
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.close-btn {
+  width: 100%;
+  margin-top: 14px;
   padding: 14px;
   border: none;
   border-radius: 14px;
   cursor: pointer;
   font-weight: 700;
-}
-
-.close-btn {
-  background: rgba(255,255,255,0.08);
-  color: white;
-}
-
-.save-btn {
   background: linear-gradient(90deg, #6366f1, #22d3ee);
   color: white;
 }
 
 @media (max-width: 640px) {
-  .modal-actions {
+  .order-top {
     flex-direction: column;
   }
 }

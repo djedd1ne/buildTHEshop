@@ -22,19 +22,17 @@
       :products="filteredProducts"
       @toggle-profile-menu="toggleProfileMenu"
       @open-balance="openBalanceModal"
-      @open-picture="openPictureModal"
+      @open-orders="openOrdersModal"
       @logout="logout"
       @select-category="selectedCategory = $event"
     />
 
     <Modals
       :showBalanceModal="showBalanceModal"
-      :showPictureModal="showPictureModal"
+      :showOrdersModal="showOrdersModal"
       :balance="userBalance"
-      :newImageUrl="newImageUrl"
+      :orders="orders"
       @close="closeModals"
-      @update:newImageUrl="newImageUrl = $event"
-      @save-picture="updateProfilePicture"
     />
   </div>
 </template>
@@ -59,8 +57,7 @@ export default {
       user: null,
       showProfileMenu: false,
       showBalanceModal: false,
-      showPictureModal: false,
-      newImageUrl: '',
+      showOrdersModal: false,
       selectedCategory: 'Featured',
       categories: [
         'Featured',
@@ -79,6 +76,20 @@ export default {
         { id: 6, category: 'Collectibles', name: 'Limited Badge', description: 'Exclusive community collectible.', price: 300, emoji: '🏅' },
         { id: 7, category: 'Featured', name: 'Desk Lamp', description: 'Minimal ambient desk light.', price: 75, emoji: '💡' },
         { id: 8, category: 'Gaming', name: 'Gaming Mouse', description: 'Ultra-light precision mouse.', price: 110, emoji: '🖱️' }
+      ],
+      orders: [
+        {
+          id: 1001,
+          date: '2026-03-28',
+          total: 210,
+          items: ['Neon Keyboard', 'Desk Lamp']
+        },
+        {
+          id: 1002,
+          date: '2026-03-27',
+          total: 180,
+          items: ['Pro Controller']
+        }
       ]
     }
   },
@@ -156,20 +167,13 @@ export default {
       this.showProfileMenu = false
       this.showBalanceModal = true
     },
-    openPictureModal() {
+    openOrdersModal() {
       this.showProfileMenu = false
-      this.newImageUrl = this.user?.image_url || ''
-      this.showPictureModal = true
+      this.showOrdersModal = true
     },
     closeModals() {
       this.showBalanceModal = false
-      this.showPictureModal = false
-    },
-    updateProfilePicture() {
-      if (this.newImageUrl && this.user) {
-        this.user.image_url = this.newImageUrl
-      }
-      this.closeModals()
+      this.showOrdersModal = false
     }
   }
 }

@@ -6,7 +6,7 @@
       :showProfileMenu="showProfileMenu"
       @toggle-profile-menu="$emit('toggle-profile-menu')"
       @open-balance="$emit('open-balance')"
-      @open-picture="$emit('open-picture')"
+      @open-orders="$emit('open-orders')"
       @logout="$emit('logout')"
     />
 

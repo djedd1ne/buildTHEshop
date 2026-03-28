@@ -22,7 +22,7 @@
 
       <div v-if="showProfileMenu" class="profile-menu">
         <button class="menu-item" @click="$emit('open-balance')">Check Balance</button>
-        <button class="menu-item" @click="$emit('open-picture')">Modify Profile Picture</button>
+        <button class="menu-item" @click="$emit('open-orders')">Order History</button>
         <button class="menu-item danger" @click="$emit('logout')">Logout</button>
       </div>
     </div>
@@ -121,6 +121,7 @@ export default {
 .topbar-title {
   font-size: 28px;
   font-weight: 800;
+  color: white;
 }
 
 @media (max-width: 900px) {
