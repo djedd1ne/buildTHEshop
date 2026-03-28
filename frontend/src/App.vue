@@ -4,54 +4,94 @@
     <div class="blob blob-2"></div>
     <div class="blob blob-3"></div>
 
-    <div class="login-wrapper" v-if="page === 'login'">
-      <div class="login-card">
-        <img :src="logo42" alt="42 logo" class="logo-image" />
+    <LoginPage
+      v-if="page === 'login'"
+      @login="handleLogin"
+    />
 
-        <h1 class="title">Sign in</h1>
-        <p class="subtitle">Continue with your 42 Intra account</p>
+    <LoadingPage v-else-if="page === 'loading'" />
 
-        <button @click="loginWith42" class="login-btn">
-          Login with 42 Intra
-        </button>
-      </div>
-    </div>
+    <ShopPage
+      v-else-if="page === 'shop'"
+      :user="user"
+      :balance="userBalance"
+      :showProfileMenu="showProfileMenu"
+      :categories="categories"
+      :selectedCategory="selectedCategory"
+      :products="filteredProducts"
+      @toggle-profile-menu="toggleProfileMenu"
+      @open-balance="openBalanceModal"
+      @open-picture="openPictureModal"
+      @logout="logout"
+      @select-category="selectedCategory = $event"
+    />
 
-    <div class="login-wrapper" v-else-if="page === 'loading'">
-      <div class="login-card">
-        <div class="spinner"></div>
-        <h1 class="title">Logging in...</h1>
-        <p class="subtitle">Please wait while we verify your account</p>
-      </div>
-    </div>
-
-    <div class="login-wrapper" v-else-if="page === 'profile'">
-      <div class="login-card">
-        <img v-if="user && user.image_url" :src="user.image_url" alt="avatar" class="avatar" />
-        <img v-else :src="logo42" alt="42 logo" class="logo-image" />
-
-        <h1 class="title">{{ user?.display_name || user?.login }}</h1>
-        <p class="subtitle">@{{ user?.login }}</p>
-
-        <button @click="logout" class="login-btn">
-          Logout
-        </button>
-      </div>
-    </div>
+    <Modals
+      :showBalanceModal="showBalanceModal"
+      :showPictureModal="showPictureModal"
+      :balance="userBalance"
+      :newImageUrl="newImageUrl"
+      @close="closeModals"
+      @update:newImageUrl="newImageUrl = $event"
+      @save-picture="updateProfilePicture"
+    />
   </div>
 </template>
 
 <script>
-import logo42 from './assets/42.png'
-
-const API_URL = 'http://localhost:5000'
+import LoginPage from './pages/LoginPage.vue'
+import LoadingPage from './pages/LoadingPage.vue'
+import ShopPage from './pages/ShopPage.vue'
+import Modals from './components/Modals.vue'
+import { loginWith42, fetchMe } from './services/api'
 
 export default {
+  components: {
+    LoginPage,
+    LoadingPage,
+    ShopPage,
+    Modals
+  },
   data() {
     return {
-      logo42,
       page: 'login',
-      user: null
+      user: null,
+      showProfileMenu: false,
+      showBalanceModal: false,
+      showPictureModal: false,
+      newImageUrl: '',
+      selectedCategory: 'Featured',
+      categories: [
+        'Featured',
+        'Electronics',
+        'Gaming',
+        'Clothes',
+        'Accessories',
+        'Collectibles'
+      ],
+      products: [
+        { id: 1, category: 'Featured', name: 'Neon Keyboard', description: 'RGB mechanical keyboard.', price: 120, emoji: '⌨️' },
+        { id: 2, category: 'Electronics', name: 'Smart Headphones', description: 'Noise cancelling headset.', price: 240, emoji: '🎧' },
+        { id: 3, category: 'Gaming', name: 'Pro Controller', description: 'Competitive wireless controller.', price: 180, emoji: '🎮' },
+        { id: 4, category: 'Clothes', name: 'Hackathon Hoodie', description: 'Soft premium hoodie.', price: 90, emoji: '🧥' },
+        { id: 5, category: 'Accessories', name: 'Cyber Backpack', description: 'Lightweight urban backpack.', price: 160, emoji: '🎒' },
+        { id: 6, category: 'Collectibles', name: 'Limited Badge', description: 'Exclusive community collectible.', price: 300, emoji: '🏅' },
+        { id: 7, category: 'Featured', name: 'Desk Lamp', description: 'Minimal ambient desk light.', price: 75, emoji: '💡' },
+        { id: 8, category: 'Gaming', name: 'Gaming Mouse', description: 'Ultra-light precision mouse.', price: 110, emoji: '🖱️' }
+      ]
+    }
+  },
+  computed: {
+    userBalance() {
+      return this.user?.balance_marvins ?? 1337
+    },
+    filteredProducts() {
+      if (this.selectedCategory === 'Featured') {
+        return this.products.filter(
+          p => p.category === 'Featured' || p.category === 'Electronics' || p.category === 'Gaming'
+        )
+      }
+      return this.products.filter(p => p.category === this.selectedCategory)
     }
   },
   async mounted() {
@@ -71,8 +111,8 @@ export default {
     }
   },
   methods: {
-    loginWith42() {
-      window.location.href = `${API_URL}/auth/42/login`
+    handleLogin() {
+      loginWith42()
     },
     async loadProfile() {
       const token = localStorage.getItem('token')
@@ -84,18 +124,12 @@ export default {
       this.page = 'loading'
 
       try {
-        const res = await fetch(`${API_URL}/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        })
-
-        if (!res.ok) {
-          throw new Error('Unauthorized')
+        const user = await fetchMe(token)
+        this.user = {
+          ...user,
+          balance_marvins: user.balance_marvins ?? 1337
         }
-
-        this.user = await res.json()
-        this.page = 'profile'
+        this.page = 'shop'
       } catch (error) {
         localStorage.removeItem('token')
         this.user = null
@@ -105,7 +139,30 @@ export default {
     logout() {
       localStorage.removeItem('token')
       this.user = null
+      this.showProfileMenu = false
       this.page = 'login'
+    },
+    toggleProfileMenu() {
+      this.showProfileMenu = !this.showProfileMenu
+    },
+    openBalanceModal() {
+      this.showProfileMenu = false
+      this.showBalanceModal = true
+    },
+    openPictureModal() {
+      this.showProfileMenu = false
+      this.newImageUrl = this.user?.image_url || ''
+      this.showPictureModal = true
+    },
+    closeModals() {
+      this.showBalanceModal = false
+      this.showPictureModal = false
+    },
+    updateProfilePicture() {
+      if (this.newImageUrl && this.user) {
+        this.user.image_url = this.newImageUrl
+      }
+      this.closeModals()
     }
   }
 }
@@ -117,94 +174,13 @@ export default {
   min-height: 100vh;
   overflow: hidden;
   background: linear-gradient(135deg, #020617 0%, #0f172a 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  font-family: 'Inter', Arial, sans-serif;
-}
-
-.login-wrapper {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 400px;
-  padding: 32px 24px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-  text-align: center;
-  animation: float 5s ease-in-out infinite;
-}
-
-.logo-image,
-.avatar {
-  width: 72px;
-  height: 72px;
-  object-fit: contain;
-  display: block;
-  margin: 0 auto 20px;
-  border-radius: 50%;
-}
-
-.title {
-  margin: 0;
-  font-size: 2rem;
-  font-weight: 800;
-  color: white;
-}
-
-.subtitle {
-  margin-top: 10px;
-  margin-bottom: 28px;
-  font-size: 0.95rem;
-  color: #cbd5e1;
-  line-height: 1.5;
-}
-
-.login-btn {
-  width: 100%;
-  padding: 15px 18px;
-  border: none;
-  border-radius: 16px;
-  background: linear-gradient(90deg, #6366f1, #22d3ee);
-  color: white;
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: 0 12px 30px rgba(34, 211, 238, 0.25);
-}
-
-.login-btn:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 18px 35px rgba(34, 211, 238, 0.35);
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  margin: 0 auto 20px;
-  border: 4px solid rgba(255, 255, 255, 0.2);
-  border-top: 4px solid #22d3ee;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
 }
 
 .blob {
   position: absolute;
   border-radius: 9999px;
   filter: blur(80px);
-  opacity: 0.45;
+  opacity: 0.35;
   animation: blobMove 10s infinite ease-in-out;
 }
 
@@ -234,49 +210,10 @@ export default {
   animation-delay: 4s;
 }
 
-@keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
-  100% { transform: translateY(0px); }
-}
-
 @keyframes blobMove {
   0% { transform: translate(0, 0) scale(1); }
   33% { transform: translate(30px, -20px) scale(1.08); }
   66% { transform: translate(-20px, 20px) scale(0.95); }
   100% { transform: translate(0, 0) scale(1); }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 640px) {
-  .login-card {
-    max-width: 100%;
-    padding: 28px 20px;
-    border-radius: 24px;
-  }
-
-  .logo-image,
-  .avatar {
-    width: 64px;
-    height: 64px;
-    margin-bottom: 18px;
-  }
-
-  .title {
-    font-size: 1.75rem;
-  }
-
-  .subtitle {
-    font-size: 0.9rem;
-    margin-bottom: 24px;
-  }
-
-  .login-btn {
-    padding: 14px 16px;
-    font-size: 0.95rem;
-  }
 }
 </style>
