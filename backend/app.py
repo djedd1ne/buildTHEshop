@@ -8,7 +8,7 @@ import datetime
 from urllib.parse import urlencode
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+CORS(app)
 
 def require_env(name):
     value = os.getenv(name)
@@ -47,30 +47,11 @@ def init_db():
 def home():
     return jsonify({"message": "Flask backend is running!"})
 
-@app.route("/db")
-def test_db():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT NOW();")
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-        return jsonify({
-            "message": "Database connected successfully",
-            "time": str(result[0])
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/auth/42/login")
 def auth_42_login():
-    client_id = require_env("FORTYTWO_CLIENT_ID")
-    redirect_uri = require_env("FORTYTWO_REDIRECT_URI")
-
     params = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
+        "client_id": require_env("FORTYTWO_CLIENT_ID"),
+        "redirect_uri": require_env("FORTYTWO_REDIRECT_URI"),
         "response_type": "code",
         "scope": "public"
     }
@@ -111,8 +92,8 @@ def auth_42_callback():
         login = user_data["login"]
         email = user_data.get("email")
         display_name = user_data.get("displayname")
-        image_url = None
 
+        image_url = None
         image = user_data.get("image")
         if isinstance(image, dict):
             versions = image.get("versions") or {}
@@ -133,6 +114,7 @@ def auth_42_callback():
                 image_url = EXCLUDED.image_url
             RETURNING id, intra_id, login, email, display_name, image_url;
         """, (intra_id, login, email, display_name, image_url))
+
         saved_user = cur.fetchone()
         conn.commit()
         cur.close()
@@ -150,10 +132,10 @@ def auth_42_callback():
             "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
         }
 
-        app_jwt = jwt.encode(payload, require_env("APP_SECRET"), algorithm="HS256")
+        token = jwt.encode(payload, require_env("APP_SECRET"), algorithm="HS256")
         frontend_url = require_env("FRONTEND_URL")
 
-        return redirect(f"{frontend_url}/auth-success?token={app_jwt}")
+        return redirect(f"{frontend_url}/auth-success?token={token}")
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
