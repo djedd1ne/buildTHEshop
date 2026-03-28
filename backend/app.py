@@ -30,23 +30,66 @@ def get_db_connection():
         password=require_env("DB_PASSWORD")
     )
 
+def compute_marvins(wallet=0, correction_points=0, coalition_score=0, threshold=0):
+    return (
+        int(correction_points or 0)
+        + int(threshold or 0)
+        + int((float(coalition_score or 0)) / 250)
+        + int((int(wallet or 0)) / 100)
+    )
+
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
-            provider VARCHAR(50) NOT NULL,
-            provider_user_id VARCHAR(255) NOT NULL,
+            provider VARCHAR(50),
+            provider_user_id VARCHAR(255),
             login VARCHAR(255),
             email VARCHAR(255),
             display_name VARCHAR(255),
             image_url TEXT,
-            balance_marvins INTEGER DEFAULT 1337,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(provider, provider_user_id)
+            balance_marvins INTEGER DEFAULT 0,
+            wallet INTEGER DEFAULT 0,
+            correction_points INTEGER DEFAULT 0,
+            coalition_score NUMERIC(10,2) DEFAULT 0,
+            threshold INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
+
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_user_id VARCHAR(255);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS login VARCHAR(255);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS image_url TEXT;")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_marvins INTEGER DEFAULT 0;")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet INTEGER DEFAULT 0;")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS correction_points INTEGER DEFAULT 0;")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coalition_score NUMERIC(10,2) DEFAULT 0;")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS threshold INTEGER DEFAULT 0;")
+
+    cur.execute("""
+        DO 
+$$
+BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'users_provider_provider_user_id_key'
+            ) THEN
+                ALTER TABLE users
+                ADD CONSTRAINT users_provider_provider_user_id_key
+                UNIQUE (provider, provider_user_id);
+            END IF;
+        END
+$$
+;
+    """)
+
     conn.commit()
     cur.close()
     conn.close()
@@ -61,26 +104,84 @@ def create_app_token(user_row):
             "email": user_row[4],
             "display_name": user_row[5],
             "image_url": user_row[6],
-            "balance_marvins": user_row[7]
+            "balance_marvins": int(user_row[7] or 0),
+            "wallet": int(user_row[8] or 0),
+            "correction_points": int(user_row[9] or 0),
+            "coalition_score": float(user_row[10] or 0),
+            "threshold": int(user_row[11] or 0)
         },
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
     }
     return jwt.encode(payload, require_env("APP_SECRET"), algorithm="HS256")
 
-def upsert_user(provider, provider_user_id, login, email, display_name, image_url):
+def upsert_user(
+    provider,
+    provider_user_id,
+    login,
+    email,
+    display_name,
+    image_url,
+    wallet=0,
+    correction_points=0,
+    coalition_score=0,
+    threshold=0
+):
+    balance_marvins = compute_marvins(wallet, correction_points, coalition_score, threshold)
+
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO users (provider, provider_user_id, login, email, display_name, image_url)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO users (
+            provider,
+            provider_user_id,
+            login,
+            email,
+            display_name,
+            image_url,
+            balance_marvins,
+            wallet,
+            correction_points,
+            coalition_score,
+            threshold
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (provider, provider_user_id)
         DO UPDATE SET
             login = EXCLUDED.login,
             email = EXCLUDED.email,
             display_name = EXCLUDED.display_name,
-            image_url = EXCLUDED.image_url
-        RETURNING id, provider, provider_user_id, login, email, display_name, image_url, balance_marvins;
-    """, (provider, provider_user_id, login, email, display_name, image_url))
+            image_url = EXCLUDED.image_url,
+            balance_marvins = EXCLUDED.balance_marvins,
+            wallet = EXCLUDED.wallet,
+            correction_points = EXCLUDED.correction_points,
+            coalition_score = EXCLUDED.coalition_score,
+            threshold = EXCLUDED.threshold
+        RETURNING
+            id,
+            provider,
+            provider_user_id,
+            login,
+            email,
+            display_name,
+            image_url,
+            balance_marvins,
+            wallet,
+            correction_points,
+            coalition_score,
+            threshold;
+    """, (
+        provider,
+        provider_user_id,
+        login,
+        email,
+        display_name,
+        image_url,
+        balance_marvins,
+        int(wallet or 0),
+        int(correction_points or 0),
+        float(coalition_score or 0),
+        int(threshold or 0)
+    ))
     user_row = cur.fetchone()
     conn.commit()
     cur.close()
@@ -93,6 +194,34 @@ def generate_pkce_pair():
         hashlib.sha256(code_verifier.encode()).digest()
     ).decode().rstrip("=")
     return code_verifier, challenge
+
+def extract_personal_coalition_score(access_token, user_id):
+    try:
+        response = requests.get(
+            f"https://api.intra.42.fr/v2/users/{user_id}/coalitions_users",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if not isinstance(data, list) or len(data) == 0:
+            return 0
+
+        scores = []
+        for item in data:
+            if isinstance(item, dict) and item.get("score") is not None:
+                try:
+                    scores.append(float(item.get("score")))
+                except Exception:
+                    pass
+
+        if not scores:
+            return 0
+
+        return max(scores)
+    except Exception:
+        return 0
 
 @app.route("/")
 def home():
@@ -151,9 +280,25 @@ def auth_42_callback():
             versions = image.get("versions") or {}
             image_url = versions.get("medium") or versions.get("small") or image.get("link")
 
-        user_row = upsert_user(provider, provider_user_id, login, email, display_name, image_url)
-        token = create_app_token(user_row)
+        wallet = user_data.get("wallet", 0) or 0
+        correction_points = user_data.get("correction_point", 0) or 0
+        coalition_score = extract_personal_coalition_score(access_token, provider_user_id)
+        threshold = 0
 
+        user_row = upsert_user(
+            provider,
+            provider_user_id,
+            login,
+            email,
+            display_name,
+            image_url,
+            wallet,
+            correction_points,
+            coalition_score,
+            threshold
+        )
+
+        token = create_app_token(user_row)
         return redirect(f"{require_env('FRONTEND_URL')}?token={token}")
 
     except Exception as e:
@@ -223,9 +368,20 @@ def auth_learninghub_callback():
         display_name = user_data.get("name") or login
         image_url = user_data.get("picture")
 
-        user_row = upsert_user(provider, provider_user_id, login, email, display_name, image_url)
-        token = create_app_token(user_row)
+        user_row = upsert_user(
+            provider,
+            provider_user_id,
+            login,
+            email,
+            display_name,
+            image_url,
+            0,
+            0,
+            0,
+            0
+        )
 
+        token = create_app_token(user_row)
         return redirect(f"{require_env('FRONTEND_URL')}?token={token}")
 
     except Exception as e:

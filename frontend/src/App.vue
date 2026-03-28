@@ -31,6 +31,10 @@
       :showBalanceModal="showBalanceModal"
       :showOrdersModal="showOrdersModal"
       :balance="userBalance"
+      :wallet="user?.wallet ?? 0"
+      :correctionPoints="user?.correction_points ?? 0"
+      :coalitionScore="user?.coalition_score ?? 0"
+      :threshold="user?.threshold ?? 0"
       :orders="orders"
       @close="closeModals"
     />
@@ -95,7 +99,7 @@ export default {
   },
   computed: {
     userBalance() {
-      return this.user?.balance_marvins ?? 1337
+      return this.user?.balance_marvins ?? 0
     },
     filteredProducts() {
       if (this.selectedCategory === 'Featured') {
@@ -145,7 +149,11 @@ export default {
         const user = await fetchMe(token)
         this.user = {
           ...user,
-          balance_marvins: user.balance_marvins ?? 1337
+          balance_marvins: user.balance_marvins ?? 0,
+          wallet: user.wallet ?? 0,
+          correction_points: user.correction_points ?? 0,
+          coalition_score: user.coalition_score ?? 0,
+          threshold: user.threshold ?? 0
         }
         this.page = 'shop'
       } catch (error) {

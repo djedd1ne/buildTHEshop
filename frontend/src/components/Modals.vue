@@ -2,8 +2,43 @@
   <div>
     <div v-if="showBalanceModal" class="modal-overlay" @click.self="$emit('close')">
       <div class="modal-card">
-        <h2>Your Balance</h2>
-        <p class="balance-number">{{ balance }} MARVINS</p>
+        <h2>Account Balance</h2>
+
+        <div class="balance-grid">
+          <div class="balance-box primary">
+            <div class="balance-label">MARVINS</div>
+            <div class="balance-value">{{ balance }}</div>
+          </div>
+
+          <div class="balance-box">
+            <div class="balance-label">Wallet</div>
+            <div class="balance-value small">{{ wallet }}</div>
+          </div>
+
+          <div class="balance-box">
+            <div class="balance-label">Evaluation Points</div>
+            <div class="balance-value small">{{ correctionPoints }}</div>
+          </div>
+
+          <div class="balance-box">
+            <div class="balance-label">Coalition Score</div>
+            <div class="balance-value small">{{ coalitionScore }}</div>
+          </div>
+
+          <div class="balance-box">
+            <div class="balance-label">Threshold</div>
+            <div class="balance-value small">{{ threshold }}</div>
+          </div>
+        </div>
+
+        <div class="conversion-box">
+          <div class="conversion-title">Conversion Rules</div>
+          <div class="conversion-line">1 evaluation point = 1 MARVIN</div>
+          <div class="conversion-line">250 coalition score = 1 MARVIN</div>
+          <div class="conversion-line">1 threshold = 1 MARVIN</div>
+          <div class="conversion-line">100 wallet = 1 MARVIN</div>
+        </div>
+
         <button class="close-btn" @click="$emit('close')">Close</button>
       </div>
     </div>
@@ -46,7 +81,16 @@
 
 <script>
 export default {
-  props: ['showBalanceModal', 'showOrdersModal', 'balance', 'orders']
+  props: [
+    'showBalanceModal',
+    'showOrdersModal',
+    'balance',
+    'wallet',
+    'correctionPoints',
+    'coalitionScore',
+    'threshold',
+    'orders'
+  ]
 }
 </script>
 
@@ -65,7 +109,7 @@ export default {
 
 .modal-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 560px;
   border-radius: 24px;
   padding: 24px;
   text-align: center;
@@ -80,10 +124,59 @@ export default {
   text-align: left;
 }
 
-.balance-number {
+.balance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 24px 0;
+}
+
+.balance-box {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.balance-box.primary {
+  grid-column: span 2;
+}
+
+.balance-label {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.balance-value {
   font-size: 32px;
   font-weight: 800;
   color: #67e8f9;
+}
+
+.balance-value.small {
+  font-size: 24px;
+}
+
+.conversion-box {
+  text-align: left;
+  margin-top: 6px;
+  margin-bottom: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.conversion-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.conversion-line {
+  color: #cbd5e1;
+  font-size: 14px;
+  margin-bottom: 6px;
 }
 
 .empty-state {
@@ -155,6 +248,14 @@ export default {
 }
 
 @media (max-width: 640px) {
+  .balance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .balance-box.primary {
+    grid-column: span 1;
+  }
+
   .order-top {
     flex-direction: column;
   }
