@@ -1,6 +1,9 @@
 <template>
   <div class="centered">
-    <LoginCard @login="$emit('login')" />
+    <LoginCard
+      @login-42="$emit('login-42')"
+      @login-learninghub="$emit('login-learninghub')"
+    />
   </div>
 </template>
 

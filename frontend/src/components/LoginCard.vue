@@ -2,10 +2,17 @@
   <div class="login-card">
     <img :src="logo42" alt="42 logo" class="logo-image" />
     <h1 class="title">Sign in</h1>
-    <p class="subtitle">Continue with your 42 Intra account</p>
-    <button @click="$emit('login')" class="login-btn">
-      Login with 42 Intra
-    </button>
+    <p class="subtitle">Choose your authentication provider</p>
+
+    <div class="buttons">
+      <button @click="$emit('login-42')" class="login-btn primary">
+        Login with 42 Intra
+      </button>
+
+      <button @click="$emit('login-learninghub')" class="login-btn secondary">
+        Login with Learning Hub
+      </button>
+    </div>
   </div>
 </template>
 
@@ -24,7 +31,7 @@ export default {
 <style scoped>
 .login-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   padding: 32px 24px;
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.08);
@@ -56,23 +63,35 @@ export default {
   color: #cbd5e1;
 }
 
+.buttons {
+  display: grid;
+  gap: 14px;
+}
+
 .login-btn {
   width: 100%;
   padding: 15px 18px;
   border: none;
   border-radius: 16px;
-  background: linear-gradient(90deg, #6366f1, #22d3ee);
   color: white;
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: 0 12px 30px rgba(34, 211, 238, 0.25);
 }
 
 .login-btn:hover {
   transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 18px 35px rgba(34, 211, 238, 0.35);
+}
+
+.primary {
+  background: linear-gradient(90deg, #6366f1, #22d3ee);
+  box-shadow: 0 12px 30px rgba(34, 211, 238, 0.25);
+}
+
+.secondary {
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+  box-shadow: 0 12px 30px rgba(20, 184, 166, 0.25);
 }
 
 @keyframes float {

@@ -6,9 +6,14 @@ import requests
 import jwt
 import datetime
 from urllib.parse import urlencode
+import secrets
+import hashlib
+import base64
 
 app = Flask(__name__)
 CORS(app)
+
+pkce_store = {}
 
 def require_env(name):
     value = os.getenv(name)
@@ -31,17 +36,63 @@ def init_db():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
-            intra_id INTEGER UNIQUE NOT NULL,
-            login VARCHAR(255) UNIQUE NOT NULL,
+            provider VARCHAR(50) NOT NULL,
+            provider_user_id VARCHAR(255) NOT NULL,
+            login VARCHAR(255),
             email VARCHAR(255),
             display_name VARCHAR(255),
             image_url TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            balance_marvins INTEGER DEFAULT 1337,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(provider, provider_user_id)
         );
     """)
     conn.commit()
     cur.close()
     conn.close()
+
+def create_app_token(user_row):
+    payload = {
+        "user": {
+            "id": user_row[0],
+            "provider": user_row[1],
+            "provider_user_id": user_row[2],
+            "login": user_row[3],
+            "email": user_row[4],
+            "display_name": user_row[5],
+            "image_url": user_row[6],
+            "balance_marvins": user_row[7]
+        },
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }
+    return jwt.encode(payload, require_env("APP_SECRET"), algorithm="HS256")
+
+def upsert_user(provider, provider_user_id, login, email, display_name, image_url):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO users (provider, provider_user_id, login, email, display_name, image_url)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (provider, provider_user_id)
+        DO UPDATE SET
+            login = EXCLUDED.login,
+            email = EXCLUDED.email,
+            display_name = EXCLUDED.display_name,
+            image_url = EXCLUDED.image_url
+        RETURNING id, provider, provider_user_id, login, email, display_name, image_url, balance_marvins;
+    """, (provider, provider_user_id, login, email, display_name, image_url))
+    user_row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return user_row
+
+def generate_pkce_pair():
+    code_verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).decode().rstrip("=")
+    return code_verifier, challenge
 
 @app.route("/")
 def home():
@@ -88,8 +139,9 @@ def auth_42_callback():
         user_response.raise_for_status()
         user_data = user_response.json()
 
-        intra_id = user_data["id"]
-        login = user_data["login"]
+        provider = "42"
+        provider_user_id = str(user_data["id"])
+        login = user_data.get("login")
         email = user_data.get("email")
         display_name = user_data.get("displayname")
 
@@ -97,45 +149,84 @@ def auth_42_callback():
         image = user_data.get("image")
         if isinstance(image, dict):
             versions = image.get("versions") or {}
-            image_url = versions.get("medium") or versions.get("small")
-            if not image_url:
-                image_url = image.get("link")
+            image_url = versions.get("medium") or versions.get("small") or image.get("link")
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO users (intra_id, login, email, display_name, image_url)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (intra_id)
-            DO UPDATE SET
-                login = EXCLUDED.login,
-                email = EXCLUDED.email,
-                display_name = EXCLUDED.display_name,
-                image_url = EXCLUDED.image_url
-            RETURNING id, intra_id, login, email, display_name, image_url;
-        """, (intra_id, login, email, display_name, image_url))
+        user_row = upsert_user(provider, provider_user_id, login, email, display_name, image_url)
+        token = create_app_token(user_row)
 
-        saved_user = cur.fetchone()
-        conn.commit()
-        cur.close()
-        conn.close()
+        return redirect(f"{require_env('FRONTEND_URL')}?token={token}")
 
-        payload = {
-            "user": {
-                "id": saved_user[0],
-                "intra_id": saved_user[1],
-                "login": saved_user[2],
-                "email": saved_user[3],
-                "display_name": saved_user[4],
-                "image_url": saved_user[5]
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/auth/learninghub/login")
+def auth_learninghub_login():
+    code_verifier, code_challenge = generate_pkce_pair()
+    state = secrets.token_urlsafe(32)
+
+    pkce_store[state] = code_verifier
+
+    params = {
+        "client_id": require_env("LEARNINGHUB_CLIENT_ID"),
+        "redirect_uri": require_env("LEARNINGHUB_REDIRECT_URI"),
+        "response_type": "code",
+        "scope": "openid profile email",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "state": state
+    }
+
+    auth_url = f"https://intranet.42heilbronn.de/oauth/authorize?{urlencode(params)}"
+    return redirect(auth_url)
+
+@app.route("/auth/learninghub/callback")
+def auth_learninghub_callback():
+    code = request.args.get("code")
+    state = request.args.get("state")
+
+    if not code or not state:
+        return jsonify({"error": "Missing code or state"}), 400
+
+    code_verifier = pkce_store.pop(state, None)
+    if not code_verifier:
+        return jsonify({"error": "Invalid or expired state"}), 400
+
+    try:
+        token_response = requests.post(
+            "https://intranet.42heilbronn.de/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": require_env("LEARNINGHUB_CLIENT_ID"),
+                "client_secret": require_env("LEARNINGHUB_CLIENT_SECRET"),
+                "code": code,
+                "redirect_uri": require_env("LEARNINGHUB_REDIRECT_URI"),
+                "code_verifier": code_verifier
             },
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-        }
+            timeout=10
+        )
+        token_response.raise_for_status()
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
 
-        token = jwt.encode(payload, require_env("APP_SECRET"), algorithm="HS256")
-        frontend_url = require_env("FRONTEND_URL")
+        user_response = requests.get(
+            "https://intranet.42heilbronn.de/oauth/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
+        user_response.raise_for_status()
+        user_data = user_response.json()
 
-        return redirect(f"{frontend_url}/auth-success?token={token}")
+        provider = "learninghub"
+        provider_user_id = str(user_data.get("sub"))
+        login = user_data.get("preferred_username") or user_data.get("username") or user_data.get("nickname")
+        email = user_data.get("email")
+        display_name = user_data.get("name") or login
+        image_url = user_data.get("picture")
+
+        user_row = upsert_user(provider, provider_user_id, login, email, display_name, image_url)
+        token = create_app_token(user_row)
+
+        return redirect(f"{require_env('FRONTEND_URL')}?token={token}")
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

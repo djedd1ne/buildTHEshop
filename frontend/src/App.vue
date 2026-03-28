@@ -6,7 +6,8 @@
 
     <LoginPage
       v-if="page === 'login'"
-      @login="handleLogin"
+      @login-42="handleLogin42"
+      @login-learninghub="handleLoginLearningHub"
     />
 
     <LoadingPage v-else-if="page === 'loading'" />
@@ -43,7 +44,7 @@ import LoginPage from './pages/LoginPage.vue'
 import LoadingPage from './pages/LoadingPage.vue'
 import ShopPage from './pages/ShopPage.vue'
 import Modals from './components/Modals.vue'
-import { loginWith42, fetchMe } from './services/api'
+import { loginWith42, loginWithLearningHub, fetchMe } from './services/api'
 
 export default {
   components: {
@@ -88,7 +89,10 @@ export default {
     filteredProducts() {
       if (this.selectedCategory === 'Featured') {
         return this.products.filter(
-          p => p.category === 'Featured' || p.category === 'Electronics' || p.category === 'Gaming'
+          p =>
+            p.category === 'Featured' ||
+            p.category === 'Electronics' ||
+            p.category === 'Gaming'
         )
       }
       return this.products.filter(p => p.category === this.selectedCategory)
@@ -111,8 +115,11 @@ export default {
     }
   },
   methods: {
-    handleLogin() {
+    handleLogin42() {
       loginWith42()
+    },
+    handleLoginLearningHub() {
+      loginWithLearningHub()
     },
     async loadProfile() {
       const token = localStorage.getItem('token')
@@ -211,9 +218,17 @@ export default {
 }
 
 @keyframes blobMove {
-  0% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -20px) scale(1.08); }
-  66% { transform: translate(-20px, 20px) scale(0.95); }
-  100% { transform: translate(0, 0) scale(1); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -20px) scale(1.08);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
 }
 </style>
