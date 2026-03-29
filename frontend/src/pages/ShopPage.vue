@@ -20,6 +20,7 @@
       <ProductGrid
         :products="products"
         :selectedCategory="selectedCategory"
+        @buy-product="$emit('buy-product', $event)"
       />
     </div>
   </div>
@@ -43,6 +44,14 @@ export default {
     'categories',
     'selectedCategory',
     'products'
+  ],
+  emits: [
+    'toggle-profile-menu',
+    'open-balance',
+    'open-orders',
+    'logout',
+    'select-category',
+    'buy-product'
   ]
 }
 </script>

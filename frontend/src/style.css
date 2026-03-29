@@ -13,3 +13,55 @@ body,
 body {
   font-family: 'Inter', Arial, sans-serif;
 }
+
+/* ============================
+   Custom Animated Cursor
+   ============================ */
+
+* {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='12' cy='12' r='10' fill='none' stroke='url(%23g)' stroke-width='2'/%3E%3Ccircle cx='12' cy='12' r='3' fill='%2322d3ee'/%3E%3C/svg%3E") 12 12, auto;
+}
+
+button,
+a,
+[role="button"],
+.buy-btn,
+.category-item,
+.login-btn,
+.close-btn,
+.confirm-btn,
+.cancel-btn,
+.menu-item,
+.profile-button {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='14' cy='14' r='12' fill='none' stroke='url(%23g)' stroke-width='2'/%3E%3Ccircle cx='14' cy='14' r='5' fill='%2322d3ee' opacity='0.8'/%3E%3Ccircle cx='14' cy='14' r='12' fill='none' stroke='%2322d3ee' stroke-width='1' opacity='0.3'/%3E%3C/svg%3E") 14 14, pointer;
+}
+
+/* ============================
+   Scrollbar Styling
+   ============================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
+/* ============================
+   Selection Highlight
+   ============================ */
+
+::selection {
+  background: rgba(99, 102, 241, 0.35);
+  color: white;
+}

@@ -9,11 +9,10 @@ from urllib.parse import urlencode
 import secrets
 import hashlib
 import base64
+import time
+import json
 
 app = Flask(__name__)
-CORS(app)
-
-pkce_store = {}
 
 def require_env(name):
     value = os.getenv(name)
@@ -21,78 +20,126 @@ def require_env(name):
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
 
+CORS(app, origins=[
+    os.getenv("FRONTEND_URL", "http://localhost:5173"),
+    "https://buildtheshop.de",
+    "https://www.buildtheshop.de"
+])
+
+pkce_store = {}
+
 def get_db_connection():
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "db"),
         port=os.getenv("DB_PORT", "5432"),
-        dbname=require_env("DB_NAME"),
-        user=require_env("DB_USER"),
-        password=require_env("DB_PASSWORD")
+        dbname=os.getenv("DB_NAME", os.getenv("POSTGRES_DB", "hackathondb")),
+        user=os.getenv("DB_USER", os.getenv("POSTGRES_USER", "postgres")),
+        password=os.getenv("DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "")),
+        sslmode=os.getenv("DB_SSLMODE", "prefer")
     )
 
 def compute_marvins(wallet=0, correction_points=0, coalition_score=0, threshold=0):
     return (
         int(correction_points or 0)
         + int(threshold or 0)
-        + int((float(coalition_score or 0)) / 250)
+        + int((float(coalition_score or 0)) / 100)
         + int((int(wallet or 0)) / 100)
     )
 
-def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
+def init_db(retries=10, delay=2):
+    for attempt in range(retries):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            provider VARCHAR(50),
-            provider_user_id VARCHAR(255),
-            login VARCHAR(255),
-            email VARCHAR(255),
-            display_name VARCHAR(255),
-            image_url TEXT,
-            balance_marvins INTEGER DEFAULT 0,
-            wallet INTEGER DEFAULT 0,
-            correction_points INTEGER DEFAULT 0,
-            coalition_score NUMERIC(10,2) DEFAULT 0,
-            threshold INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    provider VARCHAR(50),
+                    provider_user_id VARCHAR(255),
+                    login VARCHAR(255),
+                    email VARCHAR(255),
+                    display_name VARCHAR(255),
+                    image_url TEXT,
+                    balance_marvins INTEGER DEFAULT 0,
+                    wallet INTEGER DEFAULT 0,
+                    correction_points INTEGER DEFAULT 0,
+                    coalition_score NUMERIC(10,2) DEFAULT 0,
+                    threshold INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50);")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_user_id VARCHAR(255);")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS login VARCHAR(255);")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS image_url TEXT;")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_marvins INTEGER DEFAULT 0;")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet INTEGER DEFAULT 0;")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS correction_points INTEGER DEFAULT 0;")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coalition_score NUMERIC(10,2) DEFAULT 0;")
-    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS threshold INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50);")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_user_id VARCHAR(255);")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS login VARCHAR(255);")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS image_url TEXT;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_marvins INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS correction_points INTEGER DEFAULT 0;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS coalition_score NUMERIC(10,2) DEFAULT 0;")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS threshold INTEGER DEFAULT 0;")
 
-    cur.execute("""
-        DO 
+            cur.execute("""
+                DO 
 $$
 BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint
-                WHERE conname = 'users_provider_provider_user_id_key'
-            ) THEN
-                ALTER TABLE users
-                ADD CONSTRAINT users_provider_provider_user_id_key
-                UNIQUE (provider, provider_user_id);
-            END IF;
-        END
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'users_provider_provider_user_id_key'
+                    ) THEN
+                        ALTER TABLE users
+                        ADD CONSTRAINT users_provider_provider_user_id_key
+                        UNIQUE (provider, provider_user_id);
+                    END IF;
+                END
 $$
 ;
-    """)
+            """)
 
-    conn.commit()
-    cur.close()
-    conn.close()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id INTEGER;")
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS total INTEGER NOT NULL DEFAULT 0;")
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb;")
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+
+            cur.execute("""
+                DO 
+$$
+BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'orders_user_id_fkey'
+                    ) THEN
+                        ALTER TABLE orders
+                        ADD CONSTRAINT orders_user_id_fkey
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+                    END IF;
+                END
+$$
+;
+            """)
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            print("✅ Database initialized successfully")
+            return
+        except psycopg2.OperationalError as e:
+            print(f"⏳ DB not ready (attempt {attempt+1}/{retries}): {e}")
+            time.sleep(delay)
+    raise RuntimeError("❌ Could not connect to database after multiple retries")
 
 def create_app_token(user_row):
     payload = {
@@ -114,79 +161,70 @@ def create_app_token(user_row):
     }
     return jwt.encode(payload, require_env("APP_SECRET"), algorithm="HS256")
 
-def upsert_user(
-    provider,
-    provider_user_id,
-    login,
-    email,
-    display_name,
-    image_url,
-    wallet=0,
-    correction_points=0,
-    coalition_score=0,
-    threshold=0
-):
-    balance_marvins = compute_marvins(wallet, correction_points, coalition_score, threshold)
-
+def find_existing_user(provider, provider_user_id):
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO users (
-            provider,
-            provider_user_id,
-            login,
-            email,
-            display_name,
-            image_url,
-            balance_marvins,
-            wallet,
-            correction_points,
-            coalition_score,
-            threshold
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (provider, provider_user_id)
-        DO UPDATE SET
-            login = EXCLUDED.login,
-            email = EXCLUDED.email,
-            display_name = EXCLUDED.display_name,
-            image_url = EXCLUDED.image_url,
-            balance_marvins = EXCLUDED.balance_marvins,
-            wallet = EXCLUDED.wallet,
-            correction_points = EXCLUDED.correction_points,
-            coalition_score = EXCLUDED.coalition_score,
-            threshold = EXCLUDED.threshold
-        RETURNING
-            id,
-            provider,
-            provider_user_id,
-            login,
-            email,
-            display_name,
-            image_url,
-            balance_marvins,
-            wallet,
-            correction_points,
-            coalition_score,
-            threshold;
-    """, (
-        provider,
-        provider_user_id,
-        login,
-        email,
-        display_name,
-        image_url,
-        balance_marvins,
-        int(wallet or 0),
-        int(correction_points or 0),
-        float(coalition_score or 0),
-        int(threshold or 0)
-    ))
-    user_row = cur.fetchone()
-    conn.commit()
+        SELECT id, provider, provider_user_id, login, email, display_name,
+               image_url, balance_marvins, wallet, correction_points,
+               coalition_score, threshold
+        FROM users
+        WHERE provider = %s AND provider_user_id = %s
+    """, (provider, provider_user_id))
+    row = cur.fetchone()
     cur.close()
     conn.close()
-    return user_row
+    return row
+
+def upsert_user_new(
+    provider, provider_user_id, login, email, display_name, image_url,
+    wallet=0, correction_points=0, coalition_score=0, threshold=0
+):
+    existing = find_existing_user(provider, provider_user_id)
+
+    if existing:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE users SET
+                login = %s,
+                email = %s,
+                display_name = %s,
+                image_url = %s
+            WHERE provider = %s AND provider_user_id = %s
+            RETURNING id, provider, provider_user_id, login, email, display_name,
+                      image_url, balance_marvins, wallet, correction_points,
+                      coalition_score, threshold;
+        """, (login, email, display_name, image_url, provider, provider_user_id))
+        user_row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return user_row
+    else:
+        balance_marvins = compute_marvins(wallet, correction_points, coalition_score, threshold)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO users (
+                provider, provider_user_id, login, email, display_name,
+                image_url, balance_marvins, wallet, correction_points,
+                coalition_score, threshold
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, provider, provider_user_id, login, email, display_name,
+                      image_url, balance_marvins, wallet, correction_points,
+                      coalition_score, threshold;
+        """, (
+            provider, provider_user_id, login, email, display_name, image_url,
+            balance_marvins, int(wallet or 0), int(correction_points or 0),
+            float(coalition_score or 0), int(threshold or 0)
+        ))
+        user_row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return user_row
 
 def generate_pkce_pair():
     code_verifier = secrets.token_urlsafe(64)
@@ -223,6 +261,17 @@ def extract_personal_coalition_score(access_token, user_id):
     except Exception:
         return 0
 
+def get_user_from_token(req):
+    auth_header = req.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, require_env("APP_SECRET"), algorithms=["HS256"])
+        return payload["user"]
+    except Exception:
+        return None
+
 @app.route("/")
 def home():
     return jsonify({"message": "Flask backend is running!"})
@@ -243,7 +292,6 @@ def auth_42_callback():
     code = request.args.get("code")
     if not code:
         return jsonify({"error": "Missing authorization code"}), 400
-
     try:
         token_response = requests.post(
             "https://api.intra.42.fr/oauth/token",
@@ -285,17 +333,9 @@ def auth_42_callback():
         coalition_score = extract_personal_coalition_score(access_token, provider_user_id)
         threshold = 0
 
-        user_row = upsert_user(
-            provider,
-            provider_user_id,
-            login,
-            email,
-            display_name,
-            image_url,
-            wallet,
-            correction_points,
-            coalition_score,
-            threshold
+        user_row = upsert_user_new(
+            provider, provider_user_id, login, email, display_name, image_url,
+            wallet, correction_points, coalition_score, threshold
         )
 
         token = create_app_token(user_row)
@@ -308,7 +348,6 @@ def auth_42_callback():
 def auth_learninghub_login():
     code_verifier, code_challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(32)
-
     pkce_store[state] = code_verifier
 
     params = {
@@ -320,7 +359,6 @@ def auth_learninghub_login():
         "code_challenge_method": "S256",
         "state": state
     }
-
     auth_url = f"https://intranet.42heilbronn.de/oauth/authorize?{urlencode(params)}"
     return redirect(auth_url)
 
@@ -328,7 +366,6 @@ def auth_learninghub_login():
 def auth_learninghub_callback():
     code = request.args.get("code")
     state = request.args.get("state")
-
     if not code or not state:
         return jsonify({"error": "Missing code or state"}), 400
 
@@ -368,17 +405,9 @@ def auth_learninghub_callback():
         display_name = user_data.get("name") or login
         image_url = user_data.get("picture")
 
-        user_row = upsert_user(
-            provider,
-            provider_user_id,
-            login,
-            email,
-            display_name,
-            image_url,
-            0,
-            0,
-            0,
-            0
+        user_row = upsert_user_new(
+            provider, provider_user_id, login, email, display_name, image_url,
+            0, 0, 0, 0
         )
 
         token = create_app_token(user_row)
@@ -389,18 +418,160 @@ def auth_learninghub_callback():
 
 @app.route("/me")
 def me():
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return jsonify({"error": "Missing bearer token"}), 401
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
 
-    token = auth_header.split(" ", 1)[1]
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, provider, provider_user_id, login, email, display_name,
+               image_url, balance_marvins, wallet, correction_points,
+               coalition_score, threshold
+        FROM users WHERE id = %s
+    """, (user["id"],))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "id": row[0],
+        "provider": row[1],
+        "provider_user_id": row[2],
+        "login": row[3],
+        "email": row[4],
+        "display_name": row[5],
+        "image_url": row[6],
+        "balance_marvins": int(row[7] or 0),
+        "wallet": int(row[8] or 0),
+        "correction_points": int(row[9] or 0),
+        "coalition_score": float(row[10] or 0),
+        "threshold": int(row[11] or 0)
+    })
+
+@app.route("/api/purchase", methods=["POST"])
+def purchase():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
+
+    product_name = data.get("name")
+    product_price = data.get("price")
+    product_emoji = data.get("emoji", "")
+
+    if not product_name or product_price is None:
+        return jsonify({"error": "Missing product name or price"}), 400
+
+    product_price = int(product_price)
+    if product_price <= 0:
+        return jsonify({"error": "Invalid price"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
 
     try:
-        payload = jwt.decode(token, require_env("APP_SECRET"), algorithms=["HS256"])
-        return jsonify(payload["user"])
+        cur.execute("SELECT balance_marvins FROM users WHERE id = %s FOR UPDATE", (user["id"],))
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            cur.close()
+            conn.close()
+            return jsonify({"error": "User not found"}), 404
+
+        current_balance = int(row[0] or 0)
+
+        if current_balance < product_price:
+            conn.rollback()
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Insufficient MARVINS", "balance": current_balance}), 400
+
+        new_balance = current_balance - product_price
+
+        cur.execute(
+            "UPDATE users SET balance_marvins = %s WHERE id = %s",
+            (new_balance, user["id"])
+        )
+
+        items_json = json.dumps([{"name": product_name, "emoji": product_emoji}])
+        cur.execute("""
+            INSERT INTO orders (user_id, total, items)
+            VALUES (%s, %s, %s::jsonb)
+            RETURNING id, created_at;
+        """, (user["id"], product_price, items_json))
+
+        order_row = cur.fetchone()
+        conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "message": "Purchase successful",
+            "order_id": order_row[0],
+            "new_balance": new_balance,
+            "date": order_row[1].isoformat()
+        })
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 401
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/orders")
+def get_orders():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, total, items, created_at
+        FROM orders
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+    """, (user["id"],))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    orders = []
+    for row in rows:
+        items_data = row[2]
+        if isinstance(items_data, str):
+            items_data = json.loads(items_data)
+
+        item_names = []
+        if isinstance(items_data, list):
+            for item in items_data:
+                if isinstance(item, dict):
+                    item_names.append(item.get("name", "Unknown"))
+                else:
+                    item_names.append(str(item))
+
+        orders.append({
+            "id": row[0],
+            "total": row[1],
+            "items": item_names,
+            "date": row[3].strftime("%Y-%m-%d") if row[3] else ""
+        })
+
+    return jsonify(orders)
+
+try:
+    init_db()
+except Exception as e:
+    print(f"⚠️ DB init on import failed: {e}")
 
 if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    debug_mode = os.getenv("FLASK_ENV") != "production"
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
