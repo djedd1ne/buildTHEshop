@@ -1,5 +1,5 @@
 # buildTHEshop
-A full-stack virtual marketplace built for 42 students, where campus perks and privileges can be purchased using **MARVINS** — a virtual currency derived from your 42 Intra stats.
+A full-stack virtual marketplace built for 42 students, where campus perks and privileges can be purchased using **MARVINS** , a virtual currency derived from your 42 Intra stats.
 
 Your evaluation points, wallet, coalition score, and threshold from learning hub are automatically converted into MARVINS the first time you log in. Spend them wisely on perks like skipping the eval queue, reserving a desk, or getting your meme featured on campus screens.
 
